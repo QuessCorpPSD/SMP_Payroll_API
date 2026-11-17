@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.104.1" />
+    <PackageReference Include="EPPlus" Version="4.5.2.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
+    <PackageReference Include="SSH.NET" Version="2020.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\QPay_Web_Data\QPay.DAL.csproj" />
+    <ProjectReference Include="..\QPAY_Web_Domain\QPay.UI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="IRepository\PayrollInput\" />
+  </ItemGroup>
+
+</Project>

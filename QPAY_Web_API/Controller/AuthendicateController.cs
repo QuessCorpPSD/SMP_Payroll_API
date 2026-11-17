@@ -1,0 +1,242 @@
+﻿using ClosedXML.Excel;
+using DocumentFormat.OpenXml.EMMA;
+using DocumentFormat.OpenXml.Spreadsheet;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Cors;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using QPay.API.Extensions;
+using QPay.API.Models;
+using QPay.BAL.IRepository;
+using QPay.UI.Admin;
+using QPay.UI.Models;
+using QPay.UI.Models.SalaryReleaseInvoice;
+using QPAY_Web_API.Models;
+using System.Security.Claims;
+
+
+namespace QPAY_Web_API.Controller
+{
+   //[Authorize]
+    [Route("api/[controller]")]
+    [ApiController]
+    //[EnableCors("AllowOrigin")]
+    public class AuthendicateController : ControllerBase
+    {
+        private readonly ILoginRepository _loginRepository;
+        private readonly IAssignmentRepository _assignment;
+        private readonly IConfiguration _configuration;
+        private readonly IJwtTokenService _jwtTokenService;
+
+        public AuthendicateController(ILoginRepository loginRepository, IAssignmentRepository assignment, IConfiguration configuration, IJwtTokenService jwtTokenService)
+        {
+            this._loginRepository = loginRepository;
+            this._assignment = assignment;
+            _configuration = configuration;
+            _jwtTokenService = jwtTokenService;
+        }
+
+        [HttpPost,Route("UserCreate")]
+        public async Task<ActionResult> UserCreate(QPay.UI.Models.Users users)
+        {
+
+            var status=await this._loginRepository.UserCreate(users);
+            return Ok(status);
+
+        }
+        [HttpGet,Route("GetUserById/{userId}")]
+        public async Task<IActionResult> GetUserById(int userId) =>
+        Ok((await _loginRepository.GetAllActiveUsers())
+         .Where(u => u.User_Id == userId)
+         .FirstOrDefault());
+
+        [AllowAnonymous]
+        [HttpPost]
+        [Route("UserLogin")]
+        public async Task<IActionResult> UserLogin([FromBody] LoginDetailsModel loginDetailsModel)
+        {
+            if (loginDetailsModel == null ||
+                loginDetailsModel.username==0 ||
+                string.IsNullOrWhiteSpace(loginDetailsModel.password))
+            {
+                return Ok("Invalid login request.");
+            }
+
+                try
+                {
+                    var users = await _loginRepository.UserLogin(
+                        loginDetailsModel.username,
+                        loginDetailsModel.password,
+                       loginDetailsModel.ipAddress,
+                       loginDetailsModel.Cname
+                    );
+
+                    var user = users?.FirstOrDefault();
+
+                if (user is { User_Id: > 0 })
+                {
+                    var identity = new ClaimsIdentity(new[]
+                    {
+                        new Claim(ClaimTypes.Name, user.UserName ?? string.Empty),
+                        new Claim(ClaimTypes.Role, user.Role_Id.ToString()),
+                        new Claim(ClaimTypes.Email, user.Mail_Id ?? string.Empty),
+                        new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString())
+                    });
+
+                    user.token = _jwtTokenService.GenerateAccessToken(identity);
+                    user.refreshtoken = _jwtTokenService.GenerateRefreshToken();
+
+                    int userId = user.User_Id ?? 0;
+
+                    //_assignment.AutoAllocationLots(userId);
+
+                    var refreshToken = new RefreshToken
+                    {
+                        Token = user.refreshtoken,
+                        UserId = userId,
+                        ExpiryDate = DateTime.UtcNow.AddDays(1),
+                        ActionType = "I"
+                    };
+
+                    var status = _jwtTokenService.GetRefreshToken(refreshToken);
+
+                    return Ok(users);
+                }
+                else
+                {
+                    if (user != null)
+                    {
+                        user.Error_Message = user?.Error_Message ?? "Check Username";
+                    }
+                    return Ok(users);
+
+                }
+
+
+               // return Ok(user);
+                }
+                catch (Exception ex)
+                {
+                // Use ILogger in production
+              //  user.Error_Message ??= "Invalid user credentials or user not found.";
+                return StatusCode(500, "An error occurred while processing your request.");
+                }
+        }
+        [AllowAnonymous]
+        [HttpPost("refresh")]
+        public async Task<IActionResult> Refresh(TokenRequest model)
+        {
+            RefreshToken refreshToken = new RefreshToken()
+            {
+                Token=model.RefreshToken
+            };
+            var storedToken = await _jwtTokenService.GetRefreshToken(refreshToken);
+
+            if (storedToken == null || storedToken.ExpiryDate < DateTime.UtcNow || storedToken.IsRevoked)
+                return Unauthorized();
+
+            var user = (await this._loginRepository.GetAllActiveUsers())
+                    .FirstOrDefault(u => u.User_Id == storedToken.UserId);
+            if (user == null) return Unauthorized();
+
+            var identity = new ClaimsIdentity(new[]
+                     {
+                        new Claim(ClaimTypes.Name, user.UserName),
+                        new Claim(ClaimTypes.Role, user.Role_Id.ToString()),
+                        new Claim(ClaimTypes.Email, user.Mail_Id.ToString()),
+                        new Claim(ClaimTypes.NameIdentifier, Guid.NewGuid().ToString())
+                    });
+
+            user.token = _jwtTokenService.GenerateAccessToken(identity);
+            user.refreshtoken = _jwtTokenService.GenerateRefreshToken();
+
+            // Invalidate old refresh token
+            storedToken.IsRevoked = true;
+            RefreshToken refreshTokens = new RefreshToken()
+            {
+                Token = user.refreshtoken,
+                UserId = user.User_Id ?? 0,
+                ExpiryDate = DateTime.UtcNow.AddDays(1),
+                ActionType = "I"
+            };
+            var status = _jwtTokenService.GetRefreshToken(refreshTokens);
+
+            return Ok(new { accessToken = user.token, refreshToken = user.refreshtoken });
+        }
+
+
+        [HttpGet,Route("GetReporting")]
+        public async Task<IActionResult> GetReporting()
+        {
+            var reprting = await this._loginRepository.GetAllActiveUsers();
+            return Ok(reprting);
+        }
+        [HttpGet,Route("GetAllTeamLead")]
+        public async Task<IActionResult> GetAllTeamLead() =>
+        Ok((await _loginRepository.GetAllActiveUsers())
+         .Where(u => u.Role_Id == int.Parse(_configuration["Roles:TeamLeader"] ?? "0"))
+         .ToList());
+
+        [HttpGet("GetAllManager")]
+        public async Task<IActionResult> GetAllManager() =>
+        Ok((await _loginRepository.GetAllActiveUsers())
+         .Where(u => u.Role_Id == int.Parse(_configuration["Roles:Managers"] ?? "0"))
+         .ToList());
+
+        [HttpGet,Route("GetAllFunctionalityHead")]
+        public async Task<IActionResult> GetAllFunctionalityHead()
+        {
+            var roleIds = _configuration.GetSection("Roles:FunHead").Get<List<int>>() ?? new List<int>();
+            var users=await _loginRepository.GetAllActiveUsers();
+
+            var fun = users.Where(u => roleIds.Contains(u.User_Id??0));
+            return Ok(fun);
+        }
+        [HttpGet, Route("GetAllActiveUsers")]
+        public async Task<IActionResult> GetAllActiveUsers(int employeeId) =>
+       Ok((await _loginRepository.GetAllActiveUsers()));
+
+        [HttpGet, Route("UserByEmployeeId/{employeeId}")]
+        public async Task<IActionResult> UserByEmployeeId(int employeeId) =>
+       Ok((await _loginRepository.GetAllActiveUsers())
+        .Where(u => u.EmployeeID == employeeId)
+        .ToList());
+
+        [HttpPost,Route("ChangePassword")]
+        public async Task<IActionResult> ChangePassword(ChangePassword changePassword)
+        {
+            var status=await this._loginRepository.ChangePasswordAsync(changePassword);
+            return Ok(status);
+        }
+
+        [HttpGet,Route("GetData")]
+        public IActionResult GetData()
+        {
+            var res = this._loginRepository.GetCompanies();
+            return Ok(res);
+        }
+       
+       
+        public string GetsheetName(int i)
+        {
+
+            switch (i)
+            {
+                case 0: return "Pay Register";
+                //case 1: return "UnProcessed List";
+                default: return "UnProcessed List";
+
+
+            }
+
+        }
+        [HttpPost]
+        [Route("RoleWiseAccess")]
+        public async Task<IActionResult> RoleWiseAccess(PageAccessRequest request)
+        {
+            var result = await _loginRepository.RoleWiseAccess(request);
+            return Ok(result);
+        }
+    }
+}
