@@ -36,6 +36,23 @@ namespace QPay.API.Controller.GlobalMaster
             }
         }
 
+        [HttpPost]
+        [Route("ExporttoExcelPayCode")]
+        public async Task<IActionResult> ExporttoExcelPayCode(PaycodeSearchParams _params)
+        {
+            var schema = Request.Headers["X-Schema"].FirstOrDefault();
+            var response = await _IRepository.ExporttoExcelPayCode(_params.paycode_Code, _params.PayTypeId, _params.IsTaxable, _params.PayId, schema);
+            if (response.Tables[0].Rows.Count > 0)
+            {
+                var _outputResponse = ResponseWrapManager.ResponseWrapper(response, HttpContext);
+                return Ok(_outputResponse);
+            }
+            else
+            {
+                return Ok(new { StatusCode = "400", Message = "No records found" });
+            }
+        }
+
         [HttpGet]
         [Route("GetPageType")]
         public async Task<IActionResult> GetPageType()

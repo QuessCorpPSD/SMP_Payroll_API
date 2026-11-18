@@ -38,6 +38,19 @@ namespace QPay.BAL.Repository.GlobalMaster
 
         }
 
+        public async Task<DataSet> ExporttoExcelPayCode(string strPayCode, int? intPayTypeId, int? IsTaxable, int? PayId, string schema)
+        {
+            var parameters = new Dictionary<string, object>
+            {
+                ["@PayCode_Code"] = strPayCode,
+                ["@PayTypeId"] = intPayTypeId,
+                ["@IsTaxable"] = IsTaxable,
+                ["@PayCode_Id"] = PayId
+            };
+            return _dbRepository.ExecuteStoredProcedureToDataSetAsync(schema + ".sp_GetAllPaycodeExport", parameters); ;
+
+        }
+
         public async Task<DataSet> GetPageType(string schema)
         {
             var parameters = new Dictionary<string, object>

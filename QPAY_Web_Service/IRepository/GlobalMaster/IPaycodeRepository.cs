@@ -14,6 +14,7 @@ namespace QPay.BAL.IRepository.GlobalMaster
     public interface IPaycodeRepository
     {
         Task<DataSet> Search(string strPayCode, int? intPayTypeId, int? IsTaxable, int? PayId, string schema);
+        Task<DataSet> ExporttoExcelPayCode(string strPayCode, int? intPayTypeId, int? IsTaxable, int? PayId, string schema);
         Task<DataSet> Create(PaycodeCreateParams _params, string schema);
         Task<DataSet> GetPageType(string schema);
         Task<string> GetPayType(string schema);
